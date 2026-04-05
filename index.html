@@ -1,0 +1,194 @@
+
+
+	html>
+<head>
+  <title>Blind Assasin Panel</title>
+  <style>
+    body { background:#0f172a; color:white; font-family:Arial; padding:20px; }
+    input, select, button { padding:10px; margin:5px; border-radius:5px; border:none; }
+    button { background:#22c55e; color:white; cursor:pointer; }
+    .card { background:#1e293b; padding:15px; margin-top:10px; border-radius:10px; }
+  </style>
+</head>
+<body>
+
+<h2>Blind Assasin Panel</h2>
+
+<div id="auth">
+  <input id="email" placeholder="Email"><br>
+  <input id="password" type="password" placeholder="Password"><br>
+  <button onclick="register()">Register</button>
+  <button onclick="login()">Login</button>
+</div>
+
+<div id="dashboard" style="display:none;">
+
+  <h3>Coins: <span id="coins">0</span></h3>
+  <button onclick="claim()">Claim Daily (2 coins)</button>
+
+  <div class="card">
+    <h4>Create Server</h4>
+    <select id="plan">
+      <option value="basic">2GB RAM / 2 Cores</option>
+      <option value="mid">3GB RAM / 3 Cores</option>
+      <option value="pro">4GB RAM / 4 Cores</option>
+    </select>
+    <input id="serverName" placeholder="Server Name">
+    <button onclick="createServer()">Create</button>
+  </div>
+
+  <div class="card">
+    <h4>Buy Coins</h4>
+    <select id="coinsPack">
+      <option value="20">20 Coins - KSh 150</option>
+      <option value="45">45 Coins - KSh 320</option>
+      <option value="70">70 Coins - KSh 500</option>
+    </select>
+    <button onclick="buyCoins()">Buy</button>
+  </div>
+
+  <div class="card">
+    <h4>Upload Payment</h4>
+    <input type="file" id="file"><br>
+    <button id="submitBtn" onclick="upload()">Submit Payment</button>
+  </div>
+
+  <div class="card">
+    <h4>Your Servers</h4>
+    <div id="servers"></div>
+  </div>
+
+</div>
+
+<div id="adminPanel" style="display:none; border:2px solid red; padding:10px; margin-top:20px;">
+  <h2>⚠ ADMIN PANEL</h2>
+  <div id="payments"></div>
+</div>
+
+<!-- KEEP YOUR STYLE, JUST ENSURE SCRIPT BELOW EXISTS -->
+<script>
+const API="http://127.0.0.1:3000";
+let userId="", isAdmin=false;
+
+/* REGISTER */
+async function register(){
+  const res=await fetch(API+"/auth/register",{
+    method:"POST",
+    headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({email:email.value,password:password.value})
+  });
+  alert((await res.json()).message);
+}
+
+/* LOGIN */
+async function login(){
+  const res=await fetch(API+"/auth/login",{
+    method:"POST",
+    headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({email:email.value,password:password.value})
+  });
+
+  const data=await res.json();
+  if(!data.userId) return alert("Login failed");
+
+  userId=data.userId;
+  isAdmin=data.isAdmin;
+
+auth.style.display="none";
+  dashboard.style.display="block";
+ 
+  loadUser();
+  loadServers();
+
+  if(isAdmin){
+    adminPanel.style.display="block";
+    loadPayments();
+  }
+}
+
+/* LOAD USER */
+async function loadUser(){
+  const u=await (await fetch(API+"/auth/user/"+userId)).json();
+  coins.innerText=u.coins;
+}
+
+/* CLAIM */
+async function claim(){
+  await fetch(API+"/auth/claim",{method:"POST",
+    headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({userId})
+  });
+  loadUser();
+}
+
+/* CREATE SERVER */
+async function createServer(){
+  await fetch(API+"/server/create",{
+    method:"POST",
+    headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({
+      userId,
+      name:serverName.value,
+      plan:plan.value
+    })
+  });
+  loadServers();
+}
+
+/* LOAD SERVERS */
+async function loadServers(){
+  const data=await (await fetch(API+"/server/"+userId)).json();
+
+  servers.innerHTML="";
+  data.forEach(s=>{
+    servers.innerHTML+=`
+    <div>
+      <h3>${s.name}</h3>
+      <p>${s.ram} | ${s.cpu}</p>
+      <p>Status: ${s.status}</p>
+
+      <button onclick="start('${s._id}')">Start</button>
+      <button onclick="stop('${s._id}')">Stop</button>
+      <button onclick="restart('${s._id}')">Restart</button>
+
+      <div style="background:black;color:lime;height:100px;overflow:auto">
+        ${(s.logs||[]).join("<br>")}
+      </div>
+
+      <input type="file" onchange="uploadFile('${s._id}',this)">
+      <ul>${(s.files||[]).map(f=>`<li>${f}</li>`).join("")}</ul>
+
+      <input id="st-${s._id}" placeholder="index.js">
+      <button onclick="setStartup('${s._id}')">Set</button>
+    </div>`;
+  });
+}
+
+/* CONTROL */
+async function start(id){ await fetch(API+"/server/start",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({serverId:id})}); loadServers();}
+async function stop(id){ await fetch(API+"/server/stop",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({serverId:id})}); loadServers();}
+async function restart(id){ await fetch(API+"/server/restart",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({serverId:id})}); loadServers();}
+
+/* FILE */
+async function uploadFile(id,input){
+  const f=new FormData();
+  f.append("file",input.files[0]);
+  f.append("serverId",id);
+  await fetch(API+"/server/upload",{method:"POST",body:f});
+  loadServers();
+}
+
+/* STARTUP */
+async function setStartup(id){
+  const v=document.getElementById("st-"+id).value;
+  await fetch(API+"/server/startup",{
+    method:"POST",
+    headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({serverId:id,startup:v})
+  });
+  loadServers();
+}
+</script>
+
+</body>
+</html>
